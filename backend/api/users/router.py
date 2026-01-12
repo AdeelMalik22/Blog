@@ -16,7 +16,23 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.post("/api/v1/login")
 def login(login_data: LoginRequest,db: Session = Depends(get_db)):
-    """Generate Access Token"""
+    """
+    Authenticate a user and issue a JWT access token.
+
+    Looks up the user by username, verifies the supplied password against
+    the stored password hash, and returns a bearer token on success.
+
+    Args:
+        login_data: Username and password submitted by the client.
+        db: Database session (injected).
+
+    Returns:
+        dict: {"access_token": <JWT string>, "token_type": "bearer"}
+
+    Raises:
+        HTTPException: 401 if the username doesn't exist or the password
+            is incorrect.
+    """
     user = db.query(User).filter(User.username == login_data.username).first()
     if user:
         user_response =  authenticate_user(login_data.password,user)
@@ -33,6 +49,24 @@ def login(login_data: LoginRequest,db: Session = Depends(get_db)):
 
 @router.post("/creat_users", response_model=UserResponseData)
 def create_user(request:CreateUsers,db:Session= Depends(get_db),user=Depends(get_current_user)):
+    """
+    Create a new user account.
+
+    Validates that the email and username aren't already registered,
+    hashes the plaintext password, and persists the new user.
+
+    Args:
+        request: New user's name, username, email, password, and age.
+        db: Database session (injected).
+        user: Authenticated caller (injected); creating a user currently
+            requires an existing valid access token.
+
+    Returns:
+        UserResponseData: The newly created user's public fields.
+
+    Raises:
+        HTTPException: If the email or username is already taken.
+    """
     email_validation = db.query(User).filter(User.email == request.email).first()
     if email_validation:
         raise HTTPException("Email already registered")
@@ -51,6 +85,17 @@ def create_user(request:CreateUsers,db:Session= Depends(get_db),user=Depends(get
 
 @router.get("/get_user", response_model=list[UserResponseData])
 def get_users(db:Session= Depends(get_db),user=Depends(get_current_user)):
+    """
+    List all registered users.
+
+    Args:
+        db: Database session (injected).
+        user: Authenticated caller (injected).
+
+    Returns:
+        list[UserResponseData]: All users in the system, or a
+        {"message": "No users found"} dict if there are none.
+    """
     users = db.query(User).all()
     if users:
         return users
@@ -58,6 +103,22 @@ def get_users(db:Session= Depends(get_db),user=Depends(get_current_user)):
 
 @router.put("/update_user")
 def update_user(request:UpdateUser,db:Session= Depends(get_db),user=Depends(get_current_user)):
+    """
+    Update the currently authenticated user's profile.
+
+    Only fields present (non-None) in the request are updated; the
+    target user is resolved from the username embedded in the caller's
+    JWT, not from a path/body parameter.
+
+    Args:
+        request: Optional new values for name, email, age, and username.
+        db: Database session (injected).
+        user: Username of the authenticated caller (injected).
+
+    Returns:
+        dict: {"message": "User updated successfully"} on success, or
+        {"message": "No user found"} if the user no longer exists.
+    """
     user = db.query(User).filter(User.username == user).first()
     if user:
         if request.name is not None:
@@ -78,6 +139,20 @@ def update_user(request:UpdateUser,db:Session= Depends(get_db),user=Depends(get_
 
 @router.delete("/delete_user/{user_id}")
 def delete_users(user_id:int,db:Session= Depends(get_db)):
+    """
+    Delete a user by ID.
+
+    Note: unlike the other user-management endpoints, this one has no
+    auth dependency, so it is currently callable without a token.
+
+    Args:
+        user_id: Primary key of the user to delete.
+        db: Database session (injected).
+
+    Returns:
+        dict: {"message": "User deleted successfully"} on success, or
+        {"message": "No user found"} if no user with that ID exists.
+    """
     user = db.query(User).filter(User.id==user_id).first()
     if user:
         db.delete(user)
